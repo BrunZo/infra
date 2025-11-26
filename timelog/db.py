@@ -1,5 +1,6 @@
 import datetime
 import sqlite3
+import pandas as pd
 from pathlib import Path
 
 from .timelog_entry import TimeLogEntry
@@ -38,17 +39,23 @@ def add_entry(db_path: Path, entry: TimeLogEntry):
     conn = get_db(db_path)
     conn.execute(
         "INSERT INTO time_logs (start, duration_seconds, tags, description) VALUES (?, ?, ?, ?)",
-        (entry.start, entry.duration.total_seconds(), ",".join(entry.tags), entry.description)
+        (entry.start, entry.duration.total_seconds(), " ".join(entry.tags), entry.description)
     )
     conn.commit()
     conn.close()
 
-def query_all_entries(db_path: Path):
+def query_all_entries(db_path: Path) -> pd.DataFrame:
     conn = get_db(db_path)
-    cursor = conn.execute("SELECT * FROM time_logs")
-    results = [row_to_entry(row) for row in cursor.fetchall()]
+    df = pd.read_sql_query("SELECT * FROM time_logs", conn)
     conn.close()
-    return results
+    
+    df['start'] = pd.to_datetime(df['start'])
+    df['last_updated'] = pd.to_datetime(df['last_updated'])
+
+    df['duration'] = df['duration_seconds'].apply(lambda x: datetime.timedelta(seconds=x))
+    df = df.drop(columns=['duration_seconds'])
+    
+    return df
 
 def clear_all_entries(db_path: Path):
     conn = get_db(db_path)

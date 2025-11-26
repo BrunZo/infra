@@ -15,7 +15,7 @@ def parse_args():
 
 def test_add_entry(db_path: Path):
     entry = timelog_entry.TimeLogEntry(
-        start=datetime.now(), 
+        start=datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
         duration=timedelta(hours=1), 
         tags=["work", "programming"], 
         description="Worked on project"
@@ -23,8 +23,8 @@ def test_add_entry(db_path: Path):
     db.add_entry(db_path, entry)
 
 def test_query_all_entries(db_path: Path):
-    entries = db.query_all_entries(db_path)
-    print(entries)
+    df = db.query_all_entries(db_path)
+    print(df)
 
 def all_tests():
     args = parse_args()
