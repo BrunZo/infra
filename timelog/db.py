@@ -50,3 +50,9 @@ def query_all_entries(db_path: Path):
     conn.close()
     return results
 
+def clear_all_entries(db_path: Path):
+    conn = get_db(db_path)
+    conn.execute("DELETE FROM time_logs")
+    conn.commit()
+    conn.close()
+
