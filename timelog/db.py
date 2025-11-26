@@ -4,15 +4,13 @@ from pathlib import Path
 
 from .timelog_entry import TimeLogEntry
 
-DB_PATH = Path(__file__).parent / "timelog.db"
-
-def get_db():
-    conn = sqlite3.connect(DB_PATH)
+def get_db(db_path: Path):
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
 
-def init_db():
-    conn = get_db()
+def init_db(db_path: Path):
+    conn = get_db(db_path)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS time_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,8 +34,8 @@ def row_to_entry(row) -> TimeLogEntry:
         last_updated=row["last_updated"]
     )
 
-def add_entry(entry: TimeLogEntry): 
-    conn = get_db()
+def add_entry(db_path: Path, entry: TimeLogEntry): 
+    conn = get_db(db_path)
     conn.execute(
         "INSERT INTO time_logs (start, duration_seconds, tags, description) VALUES (?, ?, ?, ?)",
         (entry.start, entry.duration.total_seconds(), ",".join(entry.tags), entry.description)
@@ -45,8 +43,8 @@ def add_entry(entry: TimeLogEntry):
     conn.commit()
     conn.close()
 
-def query_all_entries():
-    conn = get_db()
+def query_all_entries(db_path: Path):
+    conn = get_db(db_path)
     cursor = conn.execute("SELECT * FROM time_logs")
     results = [row_to_entry(row) for row in cursor.fetchall()]
     conn.close()
