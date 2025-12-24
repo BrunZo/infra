@@ -40,6 +40,22 @@ def get_direct_ancestors_ids(db_path: Path, tag_id: int) -> List[int]:
     conn.close()
     return [row['parent_tag_id'] for row in rows]
 
+def get_direct_descendants_ids(db_path: Path, tag_id: int) -> List[int]:
+    conn = get_db(db_path)
+    cursor = conn.execute("SELECT * FROM tag_relationships WHERE parent_tag_id = ? AND path_length = 1", (tag_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [row['child_tag_id'] for row in rows]
+
+def get_tag_by_id(db_path: Path, id: int) -> Tag:
+    conn = get_db(db_path)
+    cursor = conn.execute("SELECT * FROM tags WHERE id = ?", (id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row is None:
+        return None
+    return Tag(id=row['id'], name=row['name'], direct_ancestors=get_direct_ancestors_ids(db_path, row['id']))
+
 def get_tag_by_name(db_path: Path, name: str) -> Tag:
     conn = get_db(db_path)
     cursor = conn.execute("SELECT * FROM tags WHERE name = ?", (name,))
