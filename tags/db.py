@@ -17,13 +17,6 @@ def init_db(db_path: Path):
     conn.commit()
     conn.close()
 
-def drop_db(db_path: Path):
-    conn = get_db(db_path)
-    conn.execute("DROP TABLE IF EXISTS tags")
-    conn.execute("DROP TABLE IF EXISTS tag_relationships")
-    conn.commit()
-    conn.close()
-
 def add_tag(db_path: Path, tag: Tag):
     conn = get_db(db_path)
 
