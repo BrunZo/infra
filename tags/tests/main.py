@@ -14,8 +14,9 @@ def parse_args():
 
 def main():
     args = parse_args()
-    db.init_db(args.db_path)
-    tree.show_tree(args.db_path, 1)
+    with db.transaction(args.db_path, dry_run=False) as conn:
+        db.init_db(conn)
+        tree.show_tree(conn, 1)
 
 if __name__ == "__main__":
     main()
