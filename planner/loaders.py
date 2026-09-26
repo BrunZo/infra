@@ -3,14 +3,13 @@ Inputs for the planner: the DAG (tags db or tags CSV) and the estimates CSV.
 
 Estimates CSV, one row per tag, blanks mean default:
 
-    name,weight,effort_hours,shape,spent_hours,deadline
-    topology_final,,,,,2026-12-10
-    topology_p1,2,40,linear,12,
-    piano_repertoire,1,30,diminishing,,
+    name,weight,halving_hours,shape,spent_hours
+    topology,2,,,
+    topology_p1,,20,log,12
+    piano_repertoire,1,30,saturating,
 """
 import csv
 from collections import defaultdict
-from datetime import date
 from pathlib import Path
 from typing import Dict, Iterable
 
@@ -54,9 +53,8 @@ def estimates_from_csv(csv_path: Path, known: Iterable[str]) -> Dict[str, Estima
             estimates[name] = Estimate(
                 name=name,
                 weight=float(row["weight"]) if row.get("weight") else 1.0,
-                effort_hours=float(row["effort_hours"]) if row.get("effort_hours") else None,
-                shape=row.get("shape") or "linear",
+                halving_hours=float(row["halving_hours"]) if row.get("halving_hours") else None,
+                shape=row.get("shape") or "log",
                 spent_hours=float(row["spent_hours"]) if row.get("spent_hours") else 0.0,
-                deadline=date.fromisoformat(row["deadline"]) if row.get("deadline") else None,
             )
     return estimates

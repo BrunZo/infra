@@ -1,19 +1,18 @@
 """
 Reduce a tag DAG under a target to a flat list of weighted leaves.
 
-The target's progress is a weighted sum of its children's, recursively:
+The target's return is a weighted sum of its children's, recursively:
 
-    progress(n) = sum over children c of  w(c) / W(n) * progress(c)
+    return(n) = sum over children c of  w(c) / W(n) * return(c)
 
-where W(n) is the sum of the weights of n's children. Unrolled, that makes
-the target's progress linear in the leaves' progress, with coefficient
+where W(n) is the sum of the weights of n's children. Unrolled, the target's
+return is linear in the leaves' returns, with coefficient
 
     coefficient(leaf) = sum over paths target -> leaf of the product of shares
 
 A leaf reached by two paths counts twice: serving two ends is worth more.
 """
 from collections import defaultdict
-from datetime import date
 from typing import Dict, List, Set, Tuple
 
 from planner.model import Estimate, Leaf
@@ -51,29 +50,17 @@ def topological_order(children: Children, nodes: Set[str], target: str) -> List[
     return order
 
 
-def flatten(
-    children: Children,
-    target: str,
-    estimates: Dict[str, Estimate],
-    horizon: date,
-) -> Tuple[List[Leaf], List[str]]:
+def flatten(children: Children, target: str, estimates: Dict[str, Estimate]) -> Tuple[List[Leaf], List[str]]:
     """
-    Returns (leaves, unestimated). Unestimated leaves have no effort, so
-    they get no time, but they keep their share: the progress they stand
-    for is real, just not plannable yet.
+    Returns (leaves, unestimated). Unestimated leaves have no curve, so they
+    get no time, but they keep their share: the return they stand for is
+    real, just not plannable yet.
     """
     nodes = descendants(children, target)
     order = topological_order(children, nodes, target)
 
     coefficient = defaultdict(float)
     coefficient[target] = 1.0
-    deadline = {n: horizon for n in nodes}
-
-    def own_deadline(n: str) -> date:
-        e = estimates.get(n)
-        return min(horizon, e.deadline) if e and e.deadline else horizon
-
-    deadline[target] = own_deadline(target)
     for n in order:
         kids = children.get(n, [])
         total = sum(_weight(estimates, c) for c in kids)
@@ -81,23 +68,20 @@ def flatten(
             if total == 0:
                 break
             coefficient[c] += coefficient[n] * _weight(estimates, c) / total
-            # Conservative: a leaf under two deadlines is planned against the earlier.
-            deadline[c] = min(deadline[c], deadline[n], own_deadline(c))
 
     leaves, unestimated = [], []
     for n in order:
         if children.get(n):
             continue
         e = estimates.get(n)
-        if e is None or e.effort_hours is None:
+        if e is None or e.halving_hours is None:
             unestimated.append(n)
             continue
         leaves.append(Leaf(
             name=n,
             coefficient=coefficient[n],
-            deadline=deadline[n],
             shape=e.shape,
-            effort_hours=e.effort_hours,
+            halving_hours=e.halving_hours,
             spent_hours=e.spent_hours,
         ))
     return leaves, unestimated

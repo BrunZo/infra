@@ -1,5 +1,4 @@
 import argparse
-import math
 from datetime import date
 from pathlib import Path
 
@@ -25,19 +24,17 @@ def parse_args():
 
 
 def show(plan: Plan):
-    print(f"target: {plan.target}   horizon: {plan.horizon}   solver: {plan.solver}")
+    print(f"target: {plan.target}   horizon: {plan.horizon}")
     print(f"hours: {plan.planned_hours:g} planned of {plan.capacity_hours:g} available")
-    print(f"progress: {plan.progress_before:.1%} -> {plan.progress_after:.1%}")
     if plan.planned_hours:
-        print(f"return: {(plan.progress_after - plan.progress_before) / plan.planned_hours:.2%} of target per hour (average)", end="")
-        print("" if math.isnan(plan.marginal_return) else f", {plan.marginal_return:.2%} (last slot)")
+        print(f"return: {plan.gain:.2f} fresh hours ({plan.gain / plan.planned_hours:.0%} per hour on average,"
+              f" {plan.marginal_return:.0%} for the last hour)")
     print()
-    print(f"{'leaf':<28}{'hours':>7}{'share':>8}{'progress':>18}{'gain':>8}  due")
+    print(f"{'leaf':<28}{'hours':>7}{'share':>8}{'gain':>8}{'next hour':>11}")
     for a in plan.allocations:
-        progress = f"{a.progress_before:.0%} -> {a.progress_after:.0%}"
-        print(f"{a.name:<28}{a.hours:>7g}{a.coefficient:>8.1%}{progress:>18}{a.gain:>8.1%}  {a.deadline}")
+        print(f"{a.name:<28}{a.hours:>7g}{a.coefficient:>8.1%}{a.gain:>8.2f}{a.next_hour:>11.1%}")
     if plan.unestimated:
-        print(f"\nunestimated (no effort_hours, got no time): {', '.join(plan.unestimated)}")
+        print(f"\nunestimated (no halving_hours, got no time): {', '.join(plan.unestimated)}")
     print()
     for day, items in plan.schedule.items():
         print(f"{day} {day:%a}  " + ", ".join(f"{name} {hours:g}h" for name, hours in items))

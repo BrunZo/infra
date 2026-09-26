@@ -10,26 +10,23 @@ class Estimate:
 
     - weight: importance relative to siblings. A child's share of its parent
       is weight / sum of sibling weights (the `share` in prioritization).
-    - effort_hours, shape: the progress curve, see curves.py. Leaves only.
-    - spent_hours: already invested; the curve continues from there.
-    - deadline: work counts only on days strictly before it. Inherited by
-      every descendant.
+    - halving_hours, shape: the return curve, see curves.py. Leaves only.
+    - spent_hours: already invested; the curve continues from there, so a
+      well-fed leaf is worth less per hour than a neglected one.
     """
     name: str
     weight: float = 1.0
-    effort_hours: Optional[float] = None
-    shape: str = "linear"
+    halving_hours: Optional[float] = None
+    shape: str = "log"
     spent_hours: float = 0.0
-    deadline: Optional[date] = None
 
 
 @dataclass
 class Leaf:
     name: str
-    coefficient: float          # share of the target that this leaf is worth
-    deadline: date              # effective: min over itself, ancestors, horizon
+    coefficient: float          # share of the target this leaf is worth
     shape: str
-    effort_hours: float
+    halving_hours: float
     spent_hours: float
 
 
@@ -38,10 +35,8 @@ class Allocation:
     name: str
     hours: float
     coefficient: float
-    deadline: date
-    progress_before: float      # leaf progress, [0, 1]
-    progress_after: float
-    gain: float                 # target progress contributed by the new hours
+    gain: float                 # target return from the new hours, in fresh hours
+    next_hour: float            # target return of one more hour after the plan
 
 
 @dataclass
@@ -51,12 +46,13 @@ class Plan:
     capacity_hours: float
     allocations: List[Allocation]
     schedule: Dict[date, List[tuple]]      # day -> [(leaf, hours)]
-    progress_before: float                 # target progress, [0, 1]
-    progress_after: float
-    marginal_return: float                 # target progress per hour of the last slot bought
-    solver: str
+    marginal_return: float                 # target return of the last hour bought
     unestimated: List[str] = field(default_factory=list)
 
     @property
     def planned_hours(self) -> float:
         return sum(a.hours for a in self.allocations)
+
+    @property
+    def gain(self) -> float:
+        return sum(a.gain for a in self.allocations)

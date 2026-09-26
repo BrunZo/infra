@@ -4,78 +4,78 @@ python -m planner.tests.main
 import itertools
 import math
 import random
-import sqlite3
 import tempfile
 from datetime import date, timedelta
 from pathlib import Path
 
 from planner import dag, loaders, planner, solve
+from planner.curves import make_curve
 from planner.model import Estimate, Leaf
 
 D0 = date(2026, 10, 1)
+EXAMPLES = Path(__file__).parent.parent / "examples"
 
 
-def value(leaves, slots, capacity):
-    return sum(solve._gain(leaf, capacity)(slots[leaf.name]) for leaf in leaves)
+def value(leaves, slots, slot_hours):
+    return sum(solve.gain_function(leaf, slot_hours)(slots[leaf.name]) for leaf in leaves)
 
 
-def feasible(leaves, slots, capacity):
-    return all(
-        sum(slots[l.name] for l in leaves if l.deadline <= d) <= capacity.before(d)
-        for d in {l.deadline for l in leaves}
-    )
-
-
-def brute_force(leaves, capacity):
-    ranges = [range(solve._max_useful_slots(l, capacity) + 1) for l in leaves]
+def brute_force(leaves, total, slot_hours):
     best = 0.0
-    for combo in itertools.product(*ranges):
-        slots = {l.name: k for l, k in zip(leaves, combo)}
-        if feasible(leaves, slots, capacity):
-            best = max(best, value(leaves, slots, capacity))
+    for combo in itertools.product(range(total + 1), repeat=len(leaves)):
+        if sum(combo) <= total:
+            best = max(best, value(leaves, dict(zip((l.name for l in leaves), combo)), slot_hours))
     return best
 
 
-def random_instance(rng, shapes):
-    days = rng.randint(2, 4)
-    capacity = planner.build_capacity(D0, D0 + timedelta(days=days), [rng.choice([1, 1.5, 2])], 30)
-    leaves = [
-        Leaf(
-            name=f"l{i}",
-            coefficient=rng.random(),
-            deadline=D0 + timedelta(days=rng.randint(1, days)),
-            shape=rng.choice(shapes),
-            effort_hours=rng.choice([0.5, 1, 1.5, 2, 3]),
-            spent_hours=rng.choice([0, 0, 0.5]),
-        )
-        for i in range(rng.randint(1, 4))
-    ]
-    return leaves, capacity
-
-
-def test_greedy_is_optimal_for_concave():
+def test_greedy_is_optimal():
     rng = random.Random(0)
-    for _ in range(300):
-        leaves, capacity = random_instance(rng, ["linear", "diminishing"])
-        slots, _ = solve.greedy(leaves, capacity)
-        assert feasible(leaves, slots, capacity)
-        assert math.isclose(value(leaves, slots, capacity), brute_force(leaves, capacity), abs_tol=1e-9)
+    for _ in range(200):
+        leaves = [
+            Leaf(
+                name=f"l{i}",
+                coefficient=rng.random(),
+                shape=rng.choice(["log", "saturating"]),
+                halving_hours=rng.choice([0.5, 1, 2, 5]),
+                spent_hours=rng.choice([0, 0, 1, 10]),
+            )
+            for i in range(rng.randint(1, 3))
+        ]
+        total = rng.randint(0, 8)
+        slots, _ = solve.greedy(leaves, total, 0.5)
+        assert sum(slots.values()) == total
+        assert math.isclose(value(leaves, slots, 0.5), brute_force(leaves, total, 0.5), abs_tol=1e-9)
 
 
-def test_dp_is_optimal_for_anything():
-    rng = random.Random(1)
-    for _ in range(300):
-        leaves, capacity = random_instance(rng, ["linear", "step", "diminishing"])
-        slots = solve.dp(leaves, capacity)
-        assert feasible(leaves, slots, capacity)
-        assert math.isclose(value(leaves, slots, capacity), brute_force(leaves, capacity), abs_tol=1e-9)
+def test_curves_are_scaled_to_fresh_hours():
+    for shape in ("log", "saturating"):
+        curve = make_curve(shape, 4)
+        slope = lambda t: (curve(t + 1e-6) - curve(t)) / 1e-6
+        assert math.isclose(slope(0), 1, rel_tol=1e-4)
+        assert math.isclose(slope(4), 0.5, rel_tol=1e-4)     # halving hours: worth half
+        assert slope(1000) > 0 or shape == "saturating"      # log never stops paying
+
+
+def test_every_hour_is_used():
+    # Nothing finishes, so no amount of time is too much for any leaf.
+    children = {"t": ["a"], "a": []}
+    p = planner.plan(children, "t", {"a": Estimate("a", halving_hours=1)}, D0, D0 + timedelta(days=30), [8])
+    assert p.planned_hours == 240
+
+
+def test_neglected_leaf_is_fed_first():
+    children = {"t": ["a", "b"], "a": [], "b": []}
+    estimates = {"a": Estimate("a", halving_hours=5, spent_hours=50), "b": Estimate("b", halving_hours=5)}
+    p = planner.plan(children, "t", estimates, D0, D0 + timedelta(days=5), [2])
+    hours = {a.name: a.hours for a in p.allocations}
+    assert hours["b"] > hours["a"]
 
 
 def test_coefficients_follow_shares_and_paths():
     children = {"t": ["a", "b"], "a": ["x", "y"], "b": ["y"], "x": [], "y": []}
-    estimates = {n: Estimate(n, effort_hours=1) for n in "xy"}
+    estimates = {n: Estimate(n, halving_hours=1) for n in "xy"}
     estimates["a"] = Estimate("a", weight=3)
-    leaves, _ = dag.flatten(children, "t", estimates, D0)
+    leaves, _ = dag.flatten(children, "t", estimates)
     coefficient = {l.name: l.coefficient for l in leaves}
     # a is 3/4 of t, b is 1/4; y serves both a (half of it) and b (all of it).
     assert math.isclose(coefficient["x"], 0.75 * 0.5)
@@ -83,38 +83,21 @@ def test_coefficients_follow_shares_and_paths():
     assert math.isclose(sum(coefficient.values()), 1.0)
 
 
-def test_deadlines_are_inherited():
-    children = {"t": ["a"], "a": ["x"], "x": []}
-    estimates = {"a": Estimate("a", deadline=D0 + timedelta(days=2)), "x": Estimate("x", effort_hours=1)}
-    leaves, _ = dag.flatten(children, "t", estimates, D0 + timedelta(days=9))
-    assert leaves[0].deadline == D0 + timedelta(days=2)
-
-
-def test_step_needs_the_whole_effort_before_the_deadline():
-    # 2h/day for 2 days. The step task is worth more but needs 5h: impossible, so it gets nothing.
-    children = {"t": ["big", "small"], "big": [], "small": []}
-    estimates = {
-        "big": Estimate("big", weight=10, effort_hours=5, shape="step"),
-        "small": Estimate("small", effort_hours=2),
-    }
-    p = planner.plan(children, "t", estimates, D0, D0 + timedelta(days=2), [2])
-    hours = {a.name: a.hours for a in p.allocations}
-    assert p.solver == "dp"
-    assert hours == {"big": 0, "small": 2}
-
-
-def test_schedule_respects_deadlines_and_capacity():
-    children = loaders.children_from_tags_csv(Path(__file__).parent.parent / "examples" / "tags.csv")
-    estimates = loaders.estimates_from_csv(Path(__file__).parent.parent / "examples" / "estimates.csv", children)
+def test_schedule_interleaves_and_respects_capacity():
+    children = loaders.children_from_tags_csv(EXAMPLES / "tags.csv")
+    estimates = loaders.estimates_from_csv(EXAMPLES / "estimates.csv", children)
     p = planner.plan(children, "MAT", estimates, D0, date(2026, 11, 1), [1, 1, 1, 1, 1, 4, 4])
-    due = {a.name: a.deadline for a in p.allocations}
     per_leaf = {}
     for day, items in p.schedule.items():
-        assert sum(h for _, h in items) <= (4 if day.weekday() >= 5 else 1)
+        assert sum(h for _, h in items) == (4 if day.weekday() >= 5 else 1)
         for name, h in items:
-            assert day < due[name]
             per_leaf[name] = per_leaf.get(name, 0) + h
     assert per_leaf == {a.name: a.hours for a in p.allocations if a.hours}
+    # Every leaf shows up in the first and the last week, not in one block.
+    days = sorted(p.schedule)
+    for week in (days[:7], days[-7:]):
+        seen = {name for day in week for name, _ in p.schedule[day]}
+        assert seen == set(per_leaf)
     assert p.unestimated == []
 
 

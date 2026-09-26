@@ -6,7 +6,6 @@ id,name,direct_ancestors
 ,neukirch_chap2,neukirch
 ,neukirch_chap3,neukirch
 ,topology,MAT
-,topology_final,MAT
-,topology_p1,topology topology_final
-,topology_p2,topology topology_final
+,topology_p1,topology
+,topology_p2,topology
 ,problem_solving,MAT

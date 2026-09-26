@@ -1,15 +1,17 @@
 """
-Progress curves: how much of a leaf is achieved after investing some hours.
+Return curves: the value produced by the hours invested in a leaf.
 
-Every curve maps total hours invested (including hours already spent) to a
-progress fraction in [0, 1]. `effort` is the one parameter, in hours, and its
-meaning depends on the shape:
+Nothing is ever finished. Every leaf can take more time and keeps paying,
+just less each hour. Both shapes share one parameter, `halving` (hours):
 
-| shape        | progress(t)            | effort means                  | use for                        |
-|--------------|------------------------|-------------------------------|--------------------------------|
-| linear       | min(1, t / effort)     | hours to finish               | finalizable, partial credit    |
-| step         | 1 if t >= effort else 0| hours to finish               | finalizable, all-or-nothing    |
-| diminishing  | 1 - 2^(-t / effort)    | hours to get halfway          | non-finalizable (learn piano)  |
+| shape      | return(t)                        | the marginal hour is worth       |
+|------------|----------------------------------|----------------------------------|
+| log        | H * ln(1 + t/H)                  | 1/2 at t=H, 1/3 at 2H... never 0 |
+| saturating | H / ln 2 * (1 - 2^(-t/H))        | halves every H hours             |
+
+Both are scaled so the first hour is worth 1: return is measured in
+"fresh hours". `log` is the default: open-ended practice (piano, math)
+keeps paying. `saturating` is for things with a real ceiling.
 """
 import math
 from typing import Callable, Dict
@@ -17,37 +19,23 @@ from typing import Callable, Dict
 Curve = Callable[[float], float]
 
 
-def linear(effort: float) -> Curve:
-    return lambda t: min(1.0, t / effort)
+def log(halving: float) -> Curve:
+    return lambda t: halving * math.log1p(t / halving)
 
 
-def step(effort: float) -> Curve:
-    return lambda t: 1.0 if t >= effort - 1e-9 else 0.0
-
-
-def diminishing(effort: float) -> Curve:
-    return lambda t: 1.0 - math.pow(2.0, -t / effort)
+def saturating(halving: float) -> Curve:
+    return lambda t: halving / math.log(2) * (1.0 - math.pow(2.0, -t / halving))
 
 
 SHAPES: Dict[str, Callable[[float], Curve]] = {
-    "linear": linear,
-    "step": step,
-    "diminishing": diminishing,
+    "log": log,
+    "saturating": saturating,
 }
 
-# Shapes whose marginal return never increases. The greedy solver is exact
-# for these; anything else needs the DP.
-CONCAVE_SHAPES = {"linear", "diminishing"}
 
-
-def make_curve(shape: str, effort: float) -> Curve:
+def make_curve(shape: str, halving: float) -> Curve:
     if shape not in SHAPES:
         raise ValueError(f"Unknown shape '{shape}', expected one of {sorted(SHAPES)}")
-    if effort <= 0:
-        raise ValueError(f"effort must be positive, got {effort}")
-    return SHAPES[shape](effort)
-
-
-def saturation_hours(shape: str, effort: float) -> float:
-    """Hours after which more time adds no progress (inf if never)."""
-    return math.inf if shape == "diminishing" else effort
+    if halving <= 0:
+        raise ValueError(f"halving must be positive, got {halving}")
+    return SHAPES[shape](halving)
