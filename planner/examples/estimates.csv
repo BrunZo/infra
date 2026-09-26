@@ -1,0 +1,7 @@
+name,weight,effort_hours,shape,spent_hours,deadline
+topology_final,2,,,,2026-10-20
+topology_p1,,20,linear,8,
+topology_p2,,30,step,,
+neukirch_chap2,,25,linear,,
+neukirch_chap3,,30,linear,,
+problem_solving,0.5,10,diminishing,,
